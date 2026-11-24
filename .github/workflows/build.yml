@@ -10,6 +10,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-22.04
+    # The R2 credentials are secrets of the production environment, which only
+    # the main branch can use. PR builds run without an environment.
+    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'production' || '' }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -45,3 +48,40 @@ jobs:
         echo "Deploying Commit Snapshot and Review Drafts, if any..."
         rsync --archive --chmod=D755,F644 --compress --verbose \
               "$GITHUB_WORKSPACE/output/commit-snapshots" "$GITHUB_WORKSPACE/output/review-drafts" "deploy@$SERVER:/var/www/html.spec.whatwg.org"
+    # Also upload to the Cloudflare R2 bucket, if the R2 credentials are set.
+    # See https://github.com/whatwg/misc-server/issues/107.
+    - name: Upload to R2
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+        AWS_DEFAULT_REGION: auto
+      working-directory: output
+      run: |
+        if [[ -z "$AWS_ACCESS_KEY_ID" ]]; then
+          echo "Skipping R2 upload (no credentials)"
+          exit 0
+        fi
+        DEST="s3://whatwg-sites/html.spec.whatwg.org"
+
+        # Like the first rsync above: with deletes, but not touching commit snapshots and review drafts.
+        echo "Uploading build output..."
+        aws s3 sync --delete . "$DEST/" --exclude "commit-snapshots/*" --exclude "review-drafts/*"
+
+        # Commit snapshots and review drafts are write-once in R2 (bucket lock), so upload each one only
+        # if it isn't there yet, e.g. when a deploy is re-run.
+        echo ""
+        echo "Uploading Commit Snapshot and Review Drafts, if any..."
+        for ENTRY in commit-snapshots/* review-drafts/*; do
+          [[ -e "$ENTRY" ]] || continue
+          KEY="$ENTRY"
+          [[ -d "$ENTRY" ]] && KEY="$ENTRY/"
+          if [[ -n "$(aws s3 ls "$DEST/$KEY" || true)" ]]; then
+            echo "$ENTRY is already in R2, skipping"
+          elif [[ -d "$ENTRY" ]]; then
+            aws s3 sync "$ENTRY/" "$DEST/$ENTRY/"
+          else
+            aws s3 cp "$ENTRY" "$DEST/$ENTRY"
+          fi
+        done
