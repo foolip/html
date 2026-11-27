@@ -148365,7 +148365,7 @@ dictionary <dfn dictionary>StorageEventInit</dfn> : <span>EventInit</span> {
   </ol>
   </div>
 
-  <div class="example">
+  <div class="example" id="example-html-parser-text-node-count">
 
    <p>Here are some sample inputs to the parser and the corresponding number of <code>Text</code>
    nodes that they result in, assuming a user agent that executes scripts.</p>
@@ -150186,7 +150186,7 @@ document.body.appendChild(text);
        <var>existingA</var>.</p></li>
       </ol>
 
-      <p class="example">In the non-conforming stream <code
+      <p class="example" id="example-html-parser-nested-a-via-table">In the non-conforming stream <code
       data-x="">&lt;a&nbsp;href="a">a&lt;table>&lt;a&nbsp;href="b">b&lt;/table>x</code>, the first
       <code>a</code> element would be closed upon seeing the second one, and the "x" character would
       be inside a link to "b", not to "a". This is despite the fact that the outer <code>a</code>
